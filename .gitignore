@@ -1,0 +1,16 @@
+__pycache__/
+*.pyc
+*.zip
+.env
+.venv/
+venv/
+.env.*
+.idea/
+.vscode/
+.DS_Store
+
+# AWS / credentials (just in case)
+*.pem
+*.key
+
+# NEVER commit ~/.aws, so just don't add it at all.
