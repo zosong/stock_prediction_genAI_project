@@ -4,7 +4,7 @@ CREATE TABLE Company(
     stock_ticker VARCHAR(10) NOT NULL UNIQUE,
     sector VARCHAR(100),
     industry VARCHAR(100)
-)
+);
 
 CREATE TABLE Article(
     article_id INT PRIMARY KEY,
@@ -13,7 +13,7 @@ CREATE TABLE Article(
     publication_date TIMESTAMP NOT NULL,
     url VARCHAR(1000) NOT NULL,
     source_location VARCHAR(2000)
-)
+);
 
 CREATE TABLE ArticleCompanyLink(
     link_id INT PRIMARY KEY,
@@ -22,7 +22,7 @@ CREATE TABLE ArticleCompanyLink(
     FOREIGN KEY (article_id) REFERENCES Article(article_id) ON DELETE CASCADE,
     FOREIGN KEY (company_id) REFERENCES Company(company_id) ON DELETE CASCADE,
     UNIQUE (article_id, company_id)
-)
+);
 
 CREATE TABLE OfficialReport(
     report_id INT PRIMARY KEY,
@@ -36,7 +36,7 @@ CREATE TABLE OfficialReport(
     url VARCHAR(1000) NOT NULL,
     source_location VARCHAR(2000),
     FOREIGN KEY (company_id) REFERENCES Company(company_id) ON DELETE CASCADE
-)
+);
 
 CREATE TABLE SocialMedia(
     post_id INT PRIMARY KEY,
@@ -48,7 +48,7 @@ CREATE TABLE SocialMedia(
     url VARCHAR(1000) NOT NULL,
     like_count INT DEFAULT 0,
     repost_count INT DEFAULT 0
-)
+);
 
 CREATE TABLE SocialPostCompanyLink(
     link_id INT PRIMARY KEY,
@@ -57,7 +57,7 @@ CREATE TABLE SocialPostCompanyLink(
     FOREIGN KEY (post_id) REFERENCES SocialMedia(post_id) ON DELETE CASCADE,
     FOREIGN KEY (company_id) REFERENCES Company(company_id) ON DELETE CASCADE,
     UNIQUE (post_id, company_id)
-)
+);
 
 CREATE TABLE PredictionSummary(
     prediction_id INT PRIMARY KEY,
@@ -70,4 +70,4 @@ CREATE TABLE PredictionSummary(
     FOREIGN KEY (company_id) REFERENCES Company(company_id) ON DELETE CASCADE,
     CHECK (trend IN ('UP','DOWN','STABLE')),
     CHECK (confidence >= 0 AND confidence <= 100)
-)
+);
