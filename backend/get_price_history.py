@@ -1,8 +1,8 @@
 import os
-import requests
 from datetime import date, timedelta, datetime
 import time
 import pandas as pd
+import price_history_helper as ratelimit_hp
 
 API_KEY = os.environ.get("ALPHAVANTAGE_API_KEY")
 
@@ -29,9 +29,10 @@ def get_daily_history(symbol: str, start_date: str, end_date: str) -> pd.DataFra
         "apikey": API_KEY,
     }
 
-    resp = requests.get(url, params=params)
-    resp.raise_for_status()
-    data = resp.json()
+    # resp = requests.get(url, params=params)
+    # resp.raise_for_status()
+    # data = resp.json()
+    data = ratelimit_hp.alpha_vantage_get(params)
 
     if "Time Series (Daily)" not in data:
         raise RuntimeError(f"Alpha Vantage error for {symbol}: {data}")
@@ -83,5 +84,5 @@ if __name__ == "__main__":
     end = str(date.today() - timedelta(days=1))
 
     df_prices = get_daily_history(symbol, start, end)
-    write_to_file(df_prices, f"{symbol}_daily_prices.csv")
+    # write_to_file(df_prices, f"{symbol}_daily_prices.csv")
     print(df_prices.head())
