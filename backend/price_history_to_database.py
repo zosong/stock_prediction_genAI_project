@@ -6,23 +6,9 @@ from psycopg2.extras import execute_values
 
 import get_price_history as gph
 import db 
+import db_helper
 
 # ---------- DB helpers ----------
-
-def get_company_id_for_symbol(conn, symbol: str) -> int:
-    """
-    Look up company_id from the company table using stock_ticker.
-    Assumes the company row already exists.
-    """
-    with conn.cursor() as cur:
-        cur.execute(
-            "SELECT company_id FROM company WHERE stock_ticker = %s",
-            (symbol,),
-        )
-        row = cur.fetchone()
-        if not row:
-            raise ValueError(f"No company row found for ticker {symbol}")
-        return row[0]
 
 
 def upsert_pricehistory_from_df(df: pd.DataFrame, symbol: str):
@@ -32,7 +18,7 @@ def upsert_pricehistory_from_df(df: pd.DataFrame, symbol: str):
     """
     conn = db.get_connection()
     try:
-        company_id = get_company_id_for_symbol(conn, symbol)
+        company_id = db_helper.get_company_id_for_symbol(conn, symbol)
 
         rows = []
         for _, r in df.iterrows():
@@ -106,7 +92,7 @@ def update_latest_for_symbols(symbols):
     for symbol in symbols:
         conn = db.get_connection()
         try:
-            company_id = get_company_id_for_symbol(conn, symbol)
+            company_id = db_helper.get_company_id_for_symbol(conn, symbol)
             last_date = get_last_trade_date(conn, company_id)
         finally:
             conn.close()
@@ -131,7 +117,8 @@ def update_latest_for_symbols(symbols):
 # ---------- Script entry point ----------
 
 if __name__ == "__main__":
-    symbols = ["AAPL"]
+    symbols = ["AAPL", "TSLA", "AMZN"]
+
 
     # First time: run backfill
     start = "2020-01-01"

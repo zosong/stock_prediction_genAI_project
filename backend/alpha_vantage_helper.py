@@ -1,11 +1,18 @@
 import time
 import requests
+import os
+
+API_KEY = os.environ.get("ALPHAVANTAGE_API_KEY")
+
+if not API_KEY:
+    raise RuntimeError("Please set ALPHAVANTAGE_API_KEY in your environment.")
 
 # ============================================================
 # 1. Rate-Limited Alpha Vantage GET
 # ============================================================
 LAST_CALL_TS = 0
 CALLS_THIS_MINUTE = 0
+
 
 def alpha_vantage_get(params: dict):
     global LAST_CALL_TS, CALLS_THIS_MINUTE

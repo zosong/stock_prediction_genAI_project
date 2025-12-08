@@ -2,13 +2,7 @@ import os
 from datetime import date, timedelta, datetime
 import time
 import pandas as pd
-import price_history_helper as ratelimit_hp
-
-API_KEY = os.environ.get("ALPHAVANTAGE_API_KEY")
-
-if not API_KEY:
-    raise RuntimeError("Please set ALPHAVANTAGE_API_KEY in your environment.")
-
+import alpha_vantage_helper as ratelimit_hp
 
 
 def get_daily_history(symbol: str, start_date: str, end_date: str) -> pd.DataFrame:
@@ -26,7 +20,7 @@ def get_daily_history(symbol: str, start_date: str, end_date: str) -> pd.DataFra
         "function": "TIME_SERIES_DAILY",
         "symbol": symbol,
         "outputsize": "compact",   # full history; use 'compact' for last 100 days
-        "apikey": API_KEY,
+        "apikey": ratelimit_hp.API_KEY,
     }
 
     # resp = requests.get(url, params=params)
