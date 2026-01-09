@@ -1,16 +1,59 @@
+# -----------------------------
+# Python
+# -----------------------------
 __pycache__/
 *.pyc
-*.zip
+*.pyo
+*.pyd
+
+# -----------------------------
+# Virtual environments
+# -----------------------------
 .env
+.env.*
 .venv/
 venv/
-.env.*
-.idea/
-.vscode/
-.DS_Store
 
-# AWS / credentials (just in case)
+# -----------------------------
+# Data files (DO NOT COMMIT)
+# -----------------------------
+*.csv
+*.tsv
+*.parquet
+*.xlsx
+
+# -----------------------------
+# Secrets / credentials
+# -----------------------------
 *.pem
 *.key
+*.crt
+*.cert
 
-# NEVER commit ~/.aws, so just don't add it at all.
+# AWS / cloud credentials
+.aws/
+aws_access_keys*
+*accessKey*
+*secret*
+*credentials*
+
+# -----------------------------
+# OS / Editor junk
+# -----------------------------
+.DS_Store
+.idea/
+.vscode/
+
+# -----------------------------
+# Archives / installers
+# -----------------------------
+*.zip
+*.tar.gz
+*.pkg
+
+# -----------------------------
+# Optional: logs & temp
+# -----------------------------
+*.log
+*.tmp
+
