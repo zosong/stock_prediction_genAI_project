@@ -1,6 +1,6 @@
 # article_to_database.py
 
-from datetime import datetime
+from datetime import datetime, timezone
 
 from db import get_connection
 from get_news import get_news_for_symbol
@@ -10,61 +10,81 @@ import db_helper
 # ---------- DB helpers ----------
 
 
-def find_article_id_by_url(conn, url: str):
-    """
-    Returns article_id if URL exists, else None.
-    """
-    with conn.cursor() as cur:
-        cur.execute(
-            "SELECT article_id FROM article WHERE url = %s;",
-            (url,),
-        )
-        row = cur.fetchone()
-        return row[0] if row else None
+# def find_article_id_by_url(conn, url: str):
+#     """
+#     Returns article_id if URL exists, else None.
+#     """
+#     with conn.cursor() as cur:
+#         cur.execute(
+#             "SELECT article_id FROM article WHERE url = %s;",
+#             (url,),
+#         )
+#         row = cur.fetchone()
+#         return row[0] if row else None
 
 
-def insert_or_update_article(conn, title, summary, pub_dt, url, source_location):
+# def insert_or_update_article(conn, title, summary, pub_dt, url, source_location):
+#     """
+#     Insert a new article row if url not seen before; otherwise update fields.
+#     Returns article_id.
+#     """
+#     existing_id = find_article_id_by_url(conn, url)
+#     if existing_id:
+#         with conn.cursor() as cur:
+#             cur.execute(
+#                 """
+#                 UPDATE article
+#                 SET title = %s,
+#                     summary = %s,
+#                     publication_date = %s,
+#                     source_location = %s
+#                 WHERE article_id = %s;
+#                 """,
+#                 (title, summary, pub_dt, source_location, existing_id),
+#             )
+#         return existing_id
+
+#     with conn.cursor() as cur:
+#         cur.execute(
+#             """
+#             INSERT INTO article (title, summary, publication_date, url, source_location)
+#             VALUES (%s, %s, %s, %s, %s)
+#             RETURNING article_id;
+#             """,
+#             (title, summary, pub_dt, url, source_location),
+#         )
+#         article_id = cur.fetchone()[0]
+#     return article_id
+
+def upsert_article(conn, title, summary, pub_dt, url, source_location):
     """
-    Insert a new article row if url not seen before; otherwise update fields.
+    Upsert article keyed by url (unique).
     Returns article_id.
     """
-    existing_id = find_article_id_by_url(conn, url)
-    if existing_id:
-        with conn.cursor() as cur:
-            cur.execute(
-                """
-                UPDATE article
-                SET title = %s,
-                    summary = %s,
-                    publication_date = %s,
-                    source_location = %s
-                WHERE article_id = %s;
-                """,
-                (title, summary, pub_dt, source_location, existing_id),
-            )
-        return existing_id
-
     with conn.cursor() as cur:
         cur.execute(
             """
             INSERT INTO article (title, summary, publication_date, url, source_location)
             VALUES (%s, %s, %s, %s, %s)
+            ON CONFLICT (url) DO UPDATE
+            SET title = EXCLUDED.title,
+                summary = EXCLUDED.summary,
+                publication_date = EXCLUDED.publication_date,
+                source_location = EXCLUDED.source_location
             RETURNING article_id;
             """,
             (title, summary, pub_dt, url, source_location),
         )
-        article_id = cur.fetchone()[0]
-    return article_id
-
+        return cur.fetchone()[0]
 
 def ensure_article_company_link(conn, article_id: int, company_id: int):
     """
-    Insert into articlecompanylink; ignore if it already exists.
+    Insert into article_company_link; ignore if it already exists.
     """
     with conn.cursor() as cur:
         cur.execute(
             """
-            INSERT INTO articlecompanylink (article_id, company_id)
+            INSERT INTO article_company_link (article_id, company_id)
             VALUES (%s, %s)
             ON CONFLICT (article_id, company_id) DO NOTHING;
             """,
@@ -78,7 +98,7 @@ def load_news_for_symbol(symbol: str, limit: int = 50):
     """
     Fetch recent news for a symbol and load into:
       - article (metadata + summary)
-      - articlecompanylink (company mapping)
+      - article_company_link (company mapping)
 
     For now:
       - summary = Alpha Vantage's summary snippet
@@ -96,7 +116,8 @@ def load_news_for_symbol(symbol: str, limit: int = 50):
             if not time_str:
                 continue
             try:
-                pub_dt = datetime.strptime(time_str, "%Y%m%dT%H%M%S")
+                # pub_dt = datetime.strptime(time_str, "%Y%m%dT%H%M%S")
+                pub_dt = datetime.strptime(time_str, "%Y%m%dT%H%M%S").replace(tzinfo=timezone.utc)
             except ValueError:
                 continue
 
@@ -109,7 +130,7 @@ def load_news_for_symbol(symbol: str, limit: int = 50):
                 continue  # skip weird items
 
             # Insert/update article row
-            article_id = insert_or_update_article(
+            article_id = upsert_article(
                 conn,
                 title=title,
                 summary=summary,

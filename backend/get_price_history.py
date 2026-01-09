@@ -1,3 +1,4 @@
+# get_price_history.py
 import os
 from datetime import date, timedelta, datetime
 import time
@@ -22,10 +23,6 @@ def get_daily_history(symbol: str, start_date: str, end_date: str) -> pd.DataFra
         "outputsize": "compact",   # full history; use 'compact' for last 100 days
         "apikey": ratelimit_hp.API_KEY,
     }
-
-    # resp = requests.get(url, params=params)
-    # resp.raise_for_status()
-    # data = resp.json()
     data = ratelimit_hp.alpha_vantage_get(params)
 
     if "Time Series (Daily)" not in data:

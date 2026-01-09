@@ -3,19 +3,74 @@
 from datetime import date, timedelta
 import pandas as pd
 from psycopg2.extras import execute_values
+import time
+import random
 
 import get_price_history as gph
 import db 
 import db_helper
+
+# ---------- Fetch with retry ----------
+RETRYABLE_SUBSTRINGS = [
+    "Alpha Vantage",     # your RuntimeError message includes this
+    "thrott",            # throttled / throttling
+    "Information",       # Alpha Vantage throttle key
+    "Note",              # Alpha Vantage throttle key
+    "timed out",
+    "timeout",
+    "Temporary failure",
+    "Connection aborted",
+    "Connection reset",
+    "Too Many Requests",
+]
+
+def fetch_history_with_retry(symbol: str, start_date: str, end_date: str, max_retries: int = 5) -> pd.DataFrame:
+    """
+    Fetch price history with bounded retries + exponential backoff.
+    Retries only for likely-transient errors (rate limiting, network).
+    Raises the last exception if all retries fail.
+    """
+    base_sleep = 2  # seconds
+
+    for attempt in range(1, max_retries + 1):
+        try:
+            return gph.get_daily_history(symbol, start_date, end_date)
+
+        except Exception as e:
+            msg = str(e)
+
+            # Decide whether to retry
+            retryable = any(s.lower() in msg.lower() for s in RETRYABLE_SUBSTRINGS)
+
+            if not retryable:
+                # Not transient -> fail fast, it is probably a real bug (bad symbol, schema issue, etc.)
+                raise
+
+            if attempt == max_retries:
+                raise  # exhausted retries
+
+            # Exponential backoff + jitter
+            sleep_for = base_sleep * (2 ** (attempt - 1))
+            sleep_for = sleep_for + random.uniform(0, 1.0)
+
+            print(f"[WARN] {symbol}: transient fetch error (attempt {attempt}/{max_retries}). "
+                  f"Sleeping {sleep_for:.1f}s then retry. Error: {msg}")
+
+            time.sleep(sleep_for)
+
 
 # ---------- DB helpers ----------
 
 
 def upsert_pricehistory_from_df(df: pd.DataFrame, symbol: str):
     """
-    Insert/Update rows in pricehistory for the given symbol.
-    Uses UNIQUE (company_id, trade_date) on pricehistory.
+    Insert/Update rows in price_history for the given symbol.
+    Uses UNIQUE (company_id, trade_date) on price_history.
     """
+    if df.empty:
+        print(f"[DB] No rows to upsert for {symbol}")
+        return
+
     conn = db.get_connection()
     try:
         company_id = db_helper.get_company_id_for_symbol(conn, symbol)
@@ -38,7 +93,7 @@ def upsert_pricehistory_from_df(df: pd.DataFrame, symbol: str):
             execute_values(
                 cur,
                 """
-                INSERT INTO pricehistory
+                INSERT INTO price_history
                     (company_id, trade_date, open_price, high_price, low_price, close_price, volume)
                 VALUES %s
                 ON CONFLICT (company_id, trade_date) DO UPDATE
@@ -64,8 +119,13 @@ def backfill_pricehistory_for_symbols(symbols, start_date: str, end_date: str):
     Uses get_daily_history() from Alpha Vantage + upsert into DB.
     """
     for symbol in symbols:
-        print(f"[BACKFILL] Fetching history for {symbol} from {start_date} to {end_date}...")
-        df = gph.get_daily_history(symbol, start_date, end_date)
+        print(f"[BACKFILL] Fetching last ~100 trading days for {symbol}...")
+        # df = gph.get_daily_history(symbol, start_date, end_date)
+        try:
+            df = fetch_history_with_retry(symbol, start_date, end_date, max_retries=5)
+        except Exception as e:
+            print(f"[ERROR] {symbol}: failed after retries. Skipping. Error: {e}")
+            continue
         print(f"[BACKFILL] {symbol}: {len(df)} rows fetched.")
         upsert_pricehistory_from_df(df, symbol)
 
@@ -75,7 +135,7 @@ def backfill_pricehistory_for_symbols(symbols, start_date: str, end_date: str):
 def get_last_trade_date(conn, company_id: int):
     with conn.cursor() as cur:
         cur.execute(
-            "SELECT MAX(trade_date) FROM pricehistory WHERE company_id = %s;",
+            "SELECT MAX(trade_date) FROM price_history WHERE company_id = %s;",
             (company_id,),
         )
         row = cur.fetchone()
@@ -106,8 +166,13 @@ def update_latest_for_symbols(symbols):
             print(f"[UPDATE] {symbol} already up to date (last_date={last_date})")
             continue
 
-        print(f"[UPDATE] Updating {symbol} from {start} to {end}...")
-        df = gph.get_daily_history(symbol, start.isoformat(), end.isoformat())
+        print(f"[RECENT LOAD] Fetching last ~100 trading days for {symbol}...")
+        # df = gph.get_daily_history(symbol, start.isoformat(), end.isoformat())
+        try:
+            df = fetch_history_with_retry(symbol, start.isoformat(), end.isoformat(), max_retries=5)
+        except Exception as e:
+            print(f"[ERROR] {symbol}: failed after retries. Skipping. Error: {e}")
+            continue
         if df.empty:
             print(f"[UPDATE] No new rows for {symbol}")
         else:
@@ -121,7 +186,7 @@ if __name__ == "__main__":
 
 
     # First time: run backfill
-    start = "2020-01-01"
+    start = "2020-01-01" # cannot actually go back to 2020 due to API limits (100 days)
     end = str(date.today() - timedelta(days=1))
     backfill_pricehistory_for_symbols(symbols, start, end)
 
