@@ -127,13 +127,20 @@ def get_news_data(conn, company_id: int, as_of_date: date) -> dict:
             df = pd.DataFrame(rows, columns=['article_id', 'publication_date', 'sentiment_score'])
 
             article_count_7d = int(df.shape[0])
-            sentiment_mean_7d = float(df['sentiment_score'].mean()) if not df.empty else None
-            sentiment_scored_count_7d = df[(df['sentiment_score'].notna())].shape[0]
-            if sentiment_scored_count_7d >= 2:
-                sentiment_std_7d = float(np.std(df['sentiment_score'], ddof=0)) if not df.empty else None
 
-            else:
+            scored = df['sentiment_score'].dropna()
+            scored_count = len(scored)
+            sentiment_scored_count_7d = scored_count
+
+            if scored_count == 0:
+                sentiment_mean_7d = None    
                 sentiment_std_7d = None
+            elif scored_count == 1:
+                sentiment_std_7d = None
+                sentiment_mean_7d = float(scored.iloc[0]) # only one scored article
+            else:
+                sentiment_std_7d = float(np.std(scored, ddof=0))
+                sentiment_mean_7d = float(scored.mean())
 
             cur.execute(
                 """
@@ -143,11 +150,11 @@ def get_news_data(conn, company_id: int, as_of_date: date) -> dict:
                 ON acl.article_id = a.article_id
                 LEFT JOIN article_sentiment ase 
                 ON a.article_id = ase.article_id
-                WHERE acl.company_id = %s AND a.publication_date < %s'
+                WHERE acl.company_id = %s AND a.publication_date >= %s AND a.publication_date < %s
                 ORDER BY a.publication_date DESC
                 LIMIT 10;
                 """,
-                (company_id, cutoff_end),
+                (company_id, window_start, cutoff_end),
             )
             rows_sum = cur.fetchall()
             recent_articles = [{"article_id": r[0], "title": r[1], "summary": r[2], "publication_date": r[3], "sentiment_score": r[4]} for r in rows_sum]
@@ -166,15 +173,62 @@ def get_news_data(conn, company_id: int, as_of_date: date) -> dict:
         print(f"[ERROR] Failed to fetch news data: {e}")  
         raise RuntimeError("Failed to retrieve news data.") from e
 
+MAX_POSTS = 1000
 def get_social_data(conn, company_id: int, as_of_date: date) -> dict:
     """
     Retrieve social media-related features for the given stock symbol as of the specified date.
     """
-    # Placeholder implementation; in practice, fetch from social media API or database.
-    return {
-        "sentiment_score": 0.75,
-        "mention_count": 500,
-    }
+    try:   
+        cutoff_tz = pd.Timestamp(as_of_date).tz_localize("America/New_York")
+        cutoff_end = cutoff_tz + pd.Timedelta(days=1)
+        window_start = cutoff_end - pd.Timedelta(days=7)
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT smp.post_id, smp.post_time, smp.content, spcl.company_id
+                FROM social_media_post smp
+                JOIN social_post_company_link spcl
+                ON smp.post_id = spcl.post_id
+                WHERE spcl.company_id = %s AND post_time >= %s AND post_time < %s
+                ORDER BY post_time DESC
+                LIMIT %s;
+                """,
+                (company_id, window_start, cutoff_end, MAX_POSTS),
+            )
+            rows = cur.fetchall()
+            # df = pd.DataFrame(rows, columns=['post_id', 'post_time', 'content', 'company_id'])
+            recent_posts_7d = [{"post_id": r[0], "post_time": r[1], "content_preview": r[2][:200] if r[2] else None, "company_id": r[3]} for r in rows]
+
+            cur.execute(
+                """
+                SELECT COUNT(*), MAX(post_time)
+                FROM social_media_post smp
+                JOIN social_post_company_link spcl
+                ON smp.post_id = spcl.post_id
+                WHERE spcl.company_id = %s AND post_time >= %s AND post_time < %s;
+                """,
+                (company_id, window_start, cutoff_end),
+            )
+            count_row = cur.fetchone()
+            post_count_7d = count_row[0] if count_row else 0 
+            hours_since_last_post = None
+            if count_row and count_row[1]:
+                last_post_time = count_row[1]
+                last_post_time = pd.Timestamp(last_post_time).tz_convert("America/New_York")
+                time_diff = cutoff_end - last_post_time
+                hours_since_last_post = time_diff.total_seconds() / 3600.0
+
+            social = {
+                "config": {"lookback_window": 7, "market_timezone": "America/New_York", "cutoff_rule": "post_time < next_midnight_market_tz", "max_posts": MAX_POSTS, "window_start": window_start.isoformat(), "cutoff_end": cutoff_end.isoformat()},
+                "post_count_7d": post_count_7d,
+                "recent_posts_7d": recent_posts_7d,
+                "hours_since_last_post": hours_since_last_post,
+            }
+
+            return social
+    except Exception as e:
+        print(f"[ERROR] Failed to fetch social data: {e}")  
+        raise RuntimeError("Failed to retrieve social data.") from e
 
 def get_data_quality_metrics(conn, company_id: int, as_of_date: date) -> dict:
     """
