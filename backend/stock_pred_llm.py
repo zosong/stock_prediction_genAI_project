@@ -189,23 +189,24 @@ def get_social_data(conn, company_id: int, as_of_date: date) -> dict:
                 FROM social_media_post smp
                 JOIN social_post_company_link spcl
                 ON smp.post_id = spcl.post_id
-                WHERE spcl.company_id = %s AND post_time >= %s AND post_time < %s
-                ORDER BY post_time DESC
+                WHERE spcl.company_id = %s AND smp.post_time >= %s AND smp.post_time < %s
+                ORDER BY smp.post_time DESC
                 LIMIT %s;
                 """,
                 (company_id, window_start, cutoff_end, MAX_POSTS),
             )
             rows = cur.fetchall()
             # df = pd.DataFrame(rows, columns=['post_id', 'post_time', 'content', 'company_id'])
-            recent_posts_7d = [{"post_id": r[0], "post_time": r[1], "content_preview": r[2][:200] if r[2] else None, "company_id": r[3]} for r in rows]
+            recent_posts_7d = [{"post_id": r[0], "post_time": r[1].isoformat(), "content_preview": r[2][:200] if r[2] else None, "company_id": r[3]} for r in rows]
+            posts_retrieved_7d = len(recent_posts_7d)
 
             cur.execute(
                 """
-                SELECT COUNT(*), MAX(post_time)
+                SELECT COUNT(*), MAX(smp.post_time)
                 FROM social_media_post smp
                 JOIN social_post_company_link spcl
                 ON smp.post_id = spcl.post_id
-                WHERE spcl.company_id = %s AND post_time >= %s AND post_time < %s;
+                WHERE spcl.company_id = %s AND smp.post_time >= %s AND smp.post_time < %s;
                 """,
                 (company_id, window_start, cutoff_end),
             )
@@ -214,14 +215,20 @@ def get_social_data(conn, company_id: int, as_of_date: date) -> dict:
             hours_since_last_post = None
             if count_row and count_row[1]:
                 last_post_time = count_row[1]
-                last_post_time = pd.Timestamp(last_post_time).tz_convert("America/New_York")
+                last_post_time = pd.Timestamp(last_post_time)
+                if last_post_time.tz is None:
+                    last_post_time = last_post_time.tz_localize("UTC").tz_convert("America/New_York")
+                else:
+                    last_post_time = last_post_time.tz_convert("America/New_York")
                 time_diff = cutoff_end - last_post_time
-                hours_since_last_post = time_diff.total_seconds() / 3600.0
+                hours_since_last_post = round(time_diff.total_seconds() / 3600.0, 2)
 
             social = {
                 "config": {"lookback_window": 7, "market_timezone": "America/New_York", "cutoff_rule": "post_time < next_midnight_market_tz", "max_posts": MAX_POSTS, "window_start": window_start.isoformat(), "cutoff_end": cutoff_end.isoformat()},
                 "post_count_7d": post_count_7d,
                 "recent_posts_7d": recent_posts_7d,
+                "posts_retrieved_7d": posts_retrieved_7d,
+                "is_truncated": (posts_retrieved_7d == MAX_POSTS) and (post_count_7d > MAX_POSTS),
                 "hours_since_last_post": hours_since_last_post,
             }
 
@@ -229,16 +236,6 @@ def get_social_data(conn, company_id: int, as_of_date: date) -> dict:
     except Exception as e:
         print(f"[ERROR] Failed to fetch social data: {e}")  
         raise RuntimeError("Failed to retrieve social data.") from e
-
-def get_data_quality_metrics(conn, company_id: int, as_of_date: date) -> dict:
-    """
-    Retrieve data quality metrics for the given stock symbol as of the specified date.
-    """
-    # Placeholder implementation; in practice, compute based on data completeness and accuracy.
-    return {
-        "completeness": 0.95,
-        "accuracy": 0.98,
-    }
 
 def get_as_of_date(conn, company_id) -> date:
     """
