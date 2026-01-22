@@ -140,28 +140,28 @@ def fetch_pages(query: str, pages: int = 2, max_results: int = 50, start_time: O
     return deduped
 
 def main():
-    # queries = {
-    #     "TSLA": "($TSLA OR TSLA OR Tesla) -is:retweet lang:en",
-    #     "AMZN": "($AMZN OR AMZN OR Amazon) -is:retweet lang:en",
-    #     "AAPL": "($AAPL OR AAPL OR Apple) -is:retweet lang:en",
-    # }
-
     queries = {
-    "TSLA": "($TSLA OR Tesla) -is:retweet lang:en",
-}
-    start_time = None
-    rows = fetch_pages(queries, pages=1, max_results=10, start_time=start_time)
-    preview(rows, n=5)
+        "TSLA": "($TSLA OR TSLA OR Tesla) -is:retweet lang:en",
+        "AMZN": "($AMZN OR AMZN OR Amazon) -is:retweet lang:en",
+        "AAPL": "($AAPL OR AAPL OR Apple) -is:retweet lang:en",
+    }
+
+#     queries = {
+#     "TSLA": "($TSLA OR Tesla) -is:retweet lang:en",
+# }
+#     start_time = None
+#     rows = fetch_pages(queries, pages=1, max_results=10, start_time=start_time)
+#     preview(rows, n=5)
 
     # # optional: start_time for “today UTC” testing
     # # start_time = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0).isoformat().replace("+00:00", "Z")
-    # start_time = None
+    start_time = None
 
-    # for ticker, q in queries.items():
-    #     print("=" * 80)
-    #     print(f"{ticker} query: {q}")
-    #     rows = fetch_pages(q, pages=2, max_results=50, start_time=start_time)
-    #     preview(rows, n=5)
+    for ticker, q in queries.items():
+        print("=" * 80)
+        print(f"{ticker} query: {q}")
+        rows = fetch_pages(q, pages=2, max_results=50, start_time=start_time)
+        preview(rows, n=5)
 
 if __name__ == "__main__":
     main()

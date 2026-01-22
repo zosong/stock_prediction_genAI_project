@@ -93,4 +93,6 @@ def fetch_and_store_posts_for_symbol(symbol: str, pages: int = 1, max_results: i
 
 if __name__ == "__main__":
     # Keep it to ONE symbol per run on Free plan
-    fetch_and_store_posts_for_symbol("TSLA", pages=1, max_results=10)
+    # fetch_and_store_posts_for_symbol("TSLA", pages=1, max_results=10)
+    # fetch_and_store_posts_for_symbol("AAPL", pages=1, max_results=10)
+    fetch_and_store_posts_for_symbol("AMZN", pages=1, max_results=10)

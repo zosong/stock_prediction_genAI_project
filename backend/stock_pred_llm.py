@@ -6,6 +6,8 @@ import db_helper
 from datetime import datetime, date
 import pandas as pd
 import numpy as np
+import json
+
 # ---------- Create feature pack ----------
 
 def get_schema_version() -> int:
@@ -129,6 +131,7 @@ def get_news_data(conn, company_id: int, as_of_date: date) -> dict:
             article_count_7d = int(df.shape[0])
 
             scored = df['sentiment_score'].dropna()
+            scored = scored.astype(float)
             scored_count = len(scored)
             sentiment_scored_count_7d = scored_count
 
@@ -157,7 +160,7 @@ def get_news_data(conn, company_id: int, as_of_date: date) -> dict:
                 (company_id, window_start, cutoff_end),
             )
             rows_sum = cur.fetchall()
-            recent_articles = [{"article_id": r[0], "title": r[1], "summary": r[2], "publication_date": r[3], "sentiment_score": r[4]} for r in rows_sum]
+            recent_articles = [{"article_id": r[0], "title": r[1], "summary": r[2], "publication_date": r[3].isoformat(), "sentiment_score": float(r[4])} for r in rows_sum]
 
             articles = {
                 "config": {"lookback_window": 7, "market_timezone": "America/New_York", "max_articles": 10, "order": "most_recent_first", "sentiment_std_ddof": 0, "cutoff_rule": "publication_date < next_midnight_market_tz"},
@@ -186,7 +189,7 @@ def get_social_data(conn, company_id: int, as_of_date: date) -> dict:
             cur.execute(
                 """
                 SELECT smp.post_id, smp.post_time, smp.content, spcl.company_id
-                FROM social_media_post smp
+                FROM social_media smp
                 JOIN social_post_company_link spcl
                 ON smp.post_id = spcl.post_id
                 WHERE spcl.company_id = %s AND smp.post_time >= %s AND smp.post_time < %s
@@ -203,7 +206,7 @@ def get_social_data(conn, company_id: int, as_of_date: date) -> dict:
             cur.execute(
                 """
                 SELECT COUNT(*), MAX(smp.post_time)
-                FROM social_media_post smp
+                FROM social_media smp
                 JOIN social_post_company_link spcl
                 ON smp.post_id = spcl.post_id
                 WHERE spcl.company_id = %s AND smp.post_time >= %s AND smp.post_time < %s;
@@ -273,7 +276,6 @@ def create_feature_pack(symbol: str) -> dict:
         price = get_price_data(conn, company_id, as_of_date)
         news = get_news_data(conn, company_id, as_of_date)
         social = get_social_data(conn, company_id, as_of_date)
-        data_quality = get_data_quality_metrics(conn, company_id, as_of_date)
         
         feature_pack = {
             "schema_version": schema_version,
@@ -281,7 +283,6 @@ def create_feature_pack(symbol: str) -> dict:
             "price": price,
             "news": news,
             "social": social,
-            "data_quality": data_quality,
         }
         
         print(f"[Feature Pack] Created feature pack for {symbol} as of {as_of_date}")
@@ -290,4 +291,6 @@ def create_feature_pack(symbol: str) -> dict:
         conn.close()
 
 if __name__ == "__main__":
-    print(get_as_of_date(get_connection(), 1))
+    symbol = "AAPL"
+    feature_pack = create_feature_pack(symbol)
+    print(json.dumps(feature_pack, indent=2))
