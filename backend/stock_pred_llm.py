@@ -176,7 +176,7 @@ def get_news_data(conn, company_id: int, as_of_date: date) -> dict:
         print(f"[ERROR] Failed to fetch news data: {e}")  
         raise RuntimeError("Failed to retrieve news data.") from e
 
-MAX_POSTS = 1000
+MAX_POSTS = 100
 def get_social_data(conn, company_id: int, as_of_date: date) -> dict:
     """
     Retrieve social media-related features for the given stock symbol as of the specified date.
@@ -188,10 +188,12 @@ def get_social_data(conn, company_id: int, as_of_date: date) -> dict:
         with conn.cursor() as cur:
             cur.execute(
                 """
-                SELECT smp.post_id, smp.post_time, smp.content, spcl.company_id
+                SELECT smp.post_id, smp.post_time, smp.content, spcl.company_id, sps.sentiment_score
                 FROM social_media smp
                 JOIN social_post_company_link spcl
                 ON smp.post_id = spcl.post_id
+                LEFT JOIN social_post_sentiment sps
+                ON smp.post_id = sps.post_id
                 WHERE spcl.company_id = %s AND smp.post_time >= %s AND smp.post_time < %s
                 ORDER BY smp.post_time DESC
                 LIMIT %s;
@@ -199,8 +201,25 @@ def get_social_data(conn, company_id: int, as_of_date: date) -> dict:
                 (company_id, window_start, cutoff_end, MAX_POSTS),
             )
             rows = cur.fetchall()
-            # df = pd.DataFrame(rows, columns=['post_id', 'post_time', 'content', 'company_id'])
-            recent_posts_7d = [{"post_id": r[0], "post_time": r[1].isoformat(), "content_preview": r[2][:200] if r[2] else None, "company_id": r[3]} for r in rows]
+            df = pd.DataFrame(rows, columns=['post_id', 'post_time', 'content', 'company_id', 'sentiment_score'])
+            scored = df['sentiment_score']
+            scored = pd.to_numeric(scored, errors="coerce")
+            scored = scored.dropna()
+            scored = scored.astype(float)
+            scored_count = len(scored)
+            sentiment_scored_count_7d = scored_count
+
+            if scored_count == 0:
+                sentiment_mean_7d = None    
+                sentiment_std_7d = None
+            elif scored_count == 1:
+                sentiment_std_7d = None
+                sentiment_mean_7d = float(scored.iloc[0]) # only one scored article
+            else:
+                sentiment_std_7d = float(np.std(scored, ddof=0))
+                sentiment_mean_7d = float(scored.mean())
+
+            recent_posts_7d = [{"post_id": r[0], "post_time": r[1].isoformat(), "content_preview": r[2][:200] if r[2] else None, "company_id": r[3], "sentiment_score": None if r[4] is None else float(r[4])} for r in rows]
             posts_retrieved_7d = len(recent_posts_7d)
 
             cur.execute(
@@ -215,6 +234,11 @@ def get_social_data(conn, company_id: int, as_of_date: date) -> dict:
             )
             count_row = cur.fetchone()
             post_count_7d = count_row[0] if count_row else 0 
+            if post_count_7d == 0:
+                sentiment_coverage_7d = None
+            else:
+                sentiment_coverage_7d = round(sentiment_scored_count_7d / post_count_7d, 4)
+
             hours_since_last_post = None
             if count_row and count_row[1]:
                 last_post_time = count_row[1]
@@ -225,13 +249,21 @@ def get_social_data(conn, company_id: int, as_of_date: date) -> dict:
                     last_post_time = last_post_time.tz_convert("America/New_York")
                 time_diff = cutoff_end - last_post_time
                 hours_since_last_post = round(time_diff.total_seconds() / 3600.0, 2)
+                hours_since_last_post = max(0.0, hours_since_last_post)
 
             social = {
-                "config": {"lookback_window": 7, "market_timezone": "America/New_York", "cutoff_rule": "post_time < next_midnight_market_tz", "max_posts": MAX_POSTS, "window_start": window_start.isoformat(), "cutoff_end": cutoff_end.isoformat()},
-                "post_count_7d": post_count_7d,
-                "recent_posts_7d": recent_posts_7d,
-                "posts_retrieved_7d": posts_retrieved_7d,
-                "is_truncated": (posts_retrieved_7d == MAX_POSTS) and (post_count_7d > MAX_POSTS),
+                "config": {"lookback_window": 7, "market_timezone": "America/New_York", "cutoff_rule": "post_time < next_midnight_market_tz", 
+                           "max_posts": MAX_POSTS, "window_start": window_start.isoformat(), "cutoff_end": cutoff_end.isoformat(),
+                           "ingestion_is_complete_7d": None, "ingestion_completeness_note": "Posts were ingested with an API cap; 7d window may be incomplete.",
+                           "metrics_scope": "observed_posts_in_db_within_window"},
+                "post_count_7d_observed": post_count_7d,
+                "recent_posts_7d_observed": recent_posts_7d,
+                "posts_retrieved_7d_observed": posts_retrieved_7d,
+                "sentiment_mean_7d_observed": sentiment_mean_7d,
+                "sentiment_scored_count_7d_observed": sentiment_scored_count_7d,
+                "sentiment_std_7d_observed": sentiment_std_7d,
+                "sentiment_coverage_7d_observed": sentiment_coverage_7d,
+                "retrieval_is_truncated": (posts_retrieved_7d == MAX_POSTS) and (post_count_7d > MAX_POSTS), # indicates if there are more posts beyond the max fetched
                 "hours_since_last_post": hours_since_last_post,
             }
 

@@ -3,6 +3,20 @@ from db import get_connection
 from get_social_media_posts import fetch_pages
 import db_helper
 
+def not_scam_post(post: dict) -> bool:
+    """
+    Simple heuristic to filter out scammy posts.
+    For example, exclude posts with suspicious phrases.
+    """
+    content = post.get("content", "").lower()
+    hashtags = content.count("#")
+    scam_indicators = ["free money", "click here", "subscribe now", "buy followers", "giveaway", "congratulations", "dm", "won", "package", "discord", "14-day", "signal", "http", "t.co/", "join telegram", "join our", "join my"]
+
+    for phrase in scam_indicators:
+        if phrase in content:
+            return False
+    return True
+
 def upsert_post(conn, post: dict) -> int:
     """
     Upsert into social_media using (platform, external_post_id) as the natural key.
@@ -79,9 +93,10 @@ def fetch_and_store_posts_for_symbol(symbol: str, pages: int = 1, max_results: i
         stored = 0
         for post in posts:
             try:
-                internal_post_id = upsert_post(conn, post)
-                ensure_posts_company_link(conn, internal_post_id, company_id)
-                stored += 1
+                if not_scam_post(post):
+                    internal_post_id = upsert_post(conn, post)
+                    ensure_posts_company_link(conn, internal_post_id, company_id)
+                    stored += 1
             except Exception as e:
                 print(f"Error storing post {post.get('external_post_id')} for {symbol}: {e}")
 
@@ -93,6 +108,6 @@ def fetch_and_store_posts_for_symbol(symbol: str, pages: int = 1, max_results: i
 
 if __name__ == "__main__":
     # Keep it to ONE symbol per run on Free plan
-    # fetch_and_store_posts_for_symbol("TSLA", pages=1, max_results=10)
-    # fetch_and_store_posts_for_symbol("AAPL", pages=1, max_results=10)
-    fetch_and_store_posts_for_symbol("AMZN", pages=1, max_results=10)
+    # fetch_and_store_posts_for_symbol("TSLA", pages=1, max_results=50)
+    # fetch_and_store_posts_for_symbol("AAPL", pages=1, max_results=50)
+    fetch_and_store_posts_for_symbol("AMZN", pages=1, max_results=50)
